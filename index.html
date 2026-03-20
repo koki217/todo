@@ -202,43 +202,73 @@
   </div>
 
   <script>
+    const STORAGE_KEY = "todos";
     let showAll = false;
+    let nextId = 1;
 
-    // --- API ---
-    const api = {
-      list: (all) => fetch(`/api/todos?all=${all}`).then(r => r.json()),
-      add:  (title) => fetch("/api/todos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
-      }).then(r => r.json()),
-      done: (id) => fetch(`/api/todos/${id}/done`, { method: "PATCH" }).then(r => r.json()),
-      del:  (id) => fetch(`/api/todos/${id}`, { method: "DELETE" }).then(r => r.json()),
-      clearDone: () => fetch("/api/todos/done", { method: "DELETE" }).then(r => r.json()),
-    };
+    // --- localStorage CRUD ---
+    function load() {
+      try {
+        const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+        nextId = data.nextId || 1;
+        return data.todos || [];
+      } catch {
+        return [];
+      }
+    }
+
+    function save(todos) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ todos, nextId }));
+    }
+
+    function addTodo(title) {
+      const todos = load();
+      const todo = {
+        id: nextId++,
+        title,
+        done: false,
+        created: new Date().toISOString().slice(0, 10),
+      };
+      todos.push(todo);
+      save(todos);
+      return todo;
+    }
+
+    function markDone(id) {
+      const todos = load();
+      const t = todos.find(t => t.id === id);
+      if (t) { t.done = true; save(todos); }
+    }
+
+    function deleteTodoById(id) {
+      save(load().filter(t => t.id !== id));
+    }
+
+    function clearDone() {
+      save(load().filter(t => !t.done));
+    }
 
     // --- 描画 ---
-    async function render() {
-      const todos = await api.list(showAll);
+    function render() {
+      const all = load();
+      const todos = showAll ? all : all.filter(t => !t.done);
+      const undone = all.filter(t => !t.done).length;
+
+      document.getElementById("countLabel").textContent = `${undone} 件残っています`;
 
       const list = document.getElementById("todoList");
-      const count = document.getElementById("countLabel");
-
-      const undone = todos.filter(t => !t.done).length;
-      count.textContent = `${undone} 件残っています`;
-
       if (todos.length === 0) {
         list.innerHTML = '<div class="empty">タスクはありません</div>';
         return;
       }
 
       list.innerHTML = todos.map(t => `
-        <div class="todo-item ${t.done ? "done" : ""}" data-id="${t.id}">
-          <input type="checkbox" ${t.done ? "checked" : ""}
-            onchange="toggleDone(${t.id}, this)" ${t.done ? "disabled" : ""}>
+        <div class="todo-item ${t.done ? "done" : ""}">
+          <input type="checkbox" ${t.done ? "checked disabled" : ""}
+            onchange="onCheck(${t.id})">
           <span class="title">${escHtml(t.title)}</span>
-          <span class="meta">${t.created.slice(0, 10)}</span>
-          <button class="btn-delete" onclick="deleteTodo(${t.id})" title="削除">×</button>
+          <span class="meta">${t.created}</span>
+          <button class="btn-delete" onclick="onDelete(${t.id})" title="削除">×</button>
         </div>
       `).join("");
     }
@@ -248,12 +278,12 @@
     }
 
     // --- イベント ---
-    document.getElementById("addForm").addEventListener("submit", async (e) => {
+    document.getElementById("addForm").addEventListener("submit", (e) => {
       e.preventDefault();
       const input = document.getElementById("titleInput");
       const title = input.value.trim();
       if (!title) return;
-      await api.add(title);
+      addTodo(title);
       input.value = "";
       render();
     });
@@ -267,22 +297,14 @@
       });
     });
 
-    document.getElementById("btnClear").addEventListener("click", async () => {
-      await api.clearDone();
+    document.getElementById("btnClear").addEventListener("click", () => {
+      clearDone();
       render();
     });
 
-    async function toggleDone(id) {
-      await api.done(id);
-      render();
-    }
+    function onCheck(id) { markDone(id); render(); }
+    function onDelete(id) { deleteTodoById(id); render(); }
 
-    async function deleteTodo(id) {
-      await api.del(id);
-      render();
-    }
-
-    // 初期描画
     render();
   </script>
 </body>
